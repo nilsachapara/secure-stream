@@ -3,10 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, range, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-  "Access-Control-Expose-Headers":
-    "content-length, content-range, accept-ranges, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, range, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Expose-Headers": "content-length, content-range, accept-ranges, content-type",
 };
 
 serve(async (req) => {
@@ -15,107 +13,104 @@ serve(async (req) => {
   }
 
   try {
-    // Extract fileId from URL path: /stream-proxy/{fileId}
     const url = new URL(req.url);
     const pathParts = url.pathname.split("/");
     const fileId = pathParts[pathParts.length - 1];
+    const isDownload = url.searchParams.get("download") === "true";
 
     if (!fileId || fileId === "stream-proxy") {
       return new Response(JSON.stringify({ error: "Missing fileId" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceKey) {
-      return new Response(JSON.stringify({ error: "Server misconfigured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    if (!botToken) {
+      return new Response(JSON.stringify({ error: "Bot token not configured" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
+    const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Get backend URL
-    const { data: settings } = await supabaseAdmin
-      .from("system_settings")
-      .select("value")
-      .eq("key", "telegram_backend_url")
+    // Look up file record
+    const { data: file, error: fileError } = await supabase
+      .from("files")
+      .select("*")
+      .eq("id", fileId)
       .maybeSingle();
 
-    const backendUrl = settings?.value;
-    if (!backendUrl) {
-      return new Response(
-        JSON.stringify({ error: "Backend URL not configured" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+    if (fileError || !file) {
+      return new Response(JSON.stringify({ error: "File not found" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const baseUrl = backendUrl.replace(/\/+$/, "");
-    const streamUrl = `${baseUrl}/api/stream/${fileId}`;
+    // Get file path from Telegram Bot API
+    const getFileRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getFile?file_id=${file.telegram_msg_id}`
+    );
+    const getFileData = await getFileRes.json();
 
-    // Build headers for upstream request - forward Range header
+    if (!getFileData.ok || !getFileData.result?.file_path) {
+      return new Response(JSON.stringify({ error: "Could not get file from Telegram", details: getFileData }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const telegramFileUrl = `https://api.telegram.org/file/bot${botToken}/${getFileData.result.file_path}`;
+
+    // Proxy the file content
     const upstreamHeaders: Record<string, string> = {};
     const rangeHeader = req.headers.get("Range");
     if (rangeHeader) {
       upstreamHeaders["Range"] = rangeHeader;
     }
 
-    // Fetch from Go backend, following redirects automatically
-    const upstream = await fetch(streamUrl, {
-      headers: upstreamHeaders,
-      redirect: "follow", // Follow 307 redirects to Telegram CDN
-    });
+    const upstream = await fetch(telegramFileUrl, { headers: upstreamHeaders });
 
     if (!upstream.ok && upstream.status !== 206) {
-      return new Response(
-        JSON.stringify({ error: `Upstream error: ${upstream.status}` }),
-        {
-          status: upstream.status,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return new Response(JSON.stringify({ error: `Telegram file fetch failed: ${upstream.status}` }), {
+        status: upstream.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Build response headers
     const responseHeaders: Record<string, string> = { ...corsHeaders };
 
-    // Copy relevant headers from upstream
-    const copyHeaders = [
-      "content-type",
-      "content-length",
-      "content-range",
-      "accept-ranges",
-    ];
-    for (const h of copyHeaders) {
+    for (const h of ["content-type", "content-length", "content-range", "accept-ranges"]) {
       const val = upstream.headers.get(h);
       if (val) responseHeaders[h] = val;
     }
 
-    // Default content-type if missing
-    if (!responseHeaders["content-type"]) {
-      responseHeaders["content-type"] = "video/mp4";
+    // Guess content type from filename
+    if (!responseHeaders["content-type"] || responseHeaders["content-type"] === "application/octet-stream") {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = {
+        mp4: "video/mp4", mkv: "video/x-matroska", avi: "video/x-msvideo", webm: "video/webm",
+        mp3: "audio/mpeg", flac: "audio/flac", ogg: "audio/ogg", wav: "audio/wav",
+        pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+        gif: "image/gif", webp: "image/webp", zip: "application/zip",
+      };
+      responseHeaders["content-type"] = mimeMap[ext || ""] || "application/octet-stream";
     }
 
-    // Ensure accept-ranges is set
     responseHeaders["accept-ranges"] = "bytes";
+
+    if (isDownload) {
+      responseHeaders["content-disposition"] = `attachment; filename="${encodeURIComponent(file.name)}"`;
+    }
 
     return new Response(upstream.body, {
       status: upstream.status,
       headers: responseHeaders,
     });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err.message || "Stream proxy error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return new Response(JSON.stringify({ error: err.message || "Stream proxy error" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
