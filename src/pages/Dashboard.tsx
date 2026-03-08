@@ -29,10 +29,15 @@ export default function Dashboard({ isPrivate = false }: DashboardProps) {
     enabled: !!user,
   });
 
-  const canStream = (file: typeof files extends (infer T)[] | null ? T : never) => {
+  const canAccess = (file: typeof files extends (infer T)[] | null ? T : never) => {
     if (isAdmin) return true;
     if (!file.is_private) return true;
     return file.allowed_users?.includes(user?.id ?? "") ?? false;
+  };
+
+  const handleDownload = (fileId: string) => {
+    const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy/${fileId}?download=true`;
+    window.open(downloadUrl, "_blank");
   };
 
   return (
@@ -50,6 +55,7 @@ export default function Dashboard({ isPrivate = false }: DashboardProps) {
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
             <FolderOpen className="w-12 h-12 mb-3 opacity-40" />
             <p>No files yet</p>
+            <p className="text-xs mt-1">Send files to your Telegram bot to see them here</p>
           </div>
         ) : (
           <div className="grid gap-3">
@@ -58,8 +64,9 @@ export default function Dashboard({ isPrivate = false }: DashboardProps) {
                 key={file.id}
                 name={file.name}
                 size={file.size}
-                canStream={canStream(file)}
+                canStream={canAccess(file)}
                 onStream={() => setSelectedFile({ id: file.id, name: file.name })}
+                onDownload={() => handleDownload(file.id)}
               />
             ))}
           </div>
