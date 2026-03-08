@@ -75,6 +75,7 @@ export default function TelegramSetup() {
         { key: "telegram_api_id", value: apiId },
         { key: "telegram_api_hash", value: apiHash },
         { key: "telegram_bot_token", value: botToken },
+        { key: "telegram_backend_url", value: backendUrl },
       ];
 
       for (const entry of entries) {
