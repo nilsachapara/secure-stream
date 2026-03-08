@@ -212,6 +212,17 @@ export default function TelegramSetup() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label>Phone Number</Label>
+                  <div className="flex items-center gap-2">
+                    <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Input placeholder="+911234567890" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Phone number linked to your Telegram account (with country code)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
                   <Label>Backend URL</Label>
                   <div className="flex items-center gap-2">
                     <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
