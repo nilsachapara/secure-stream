@@ -226,7 +226,17 @@ export default function TelegramSetup() {
                   </div>
                 </div>
 
-                <Button
+                <div className="space-y-2">
+                  <Label>Backend URL</Label>
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Input placeholder="https://your-bridge.example.com" value={backendUrl} onChange={(e) => setBackendUrl(e.target.value)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Your Node.js MTProto bridge server URL
+                  </p>
+                </div>
+
                   onClick={() => saveCredentials.mutate()}
                   disabled={saveCredentials.isPending || !apiId}
                   className="w-full"
