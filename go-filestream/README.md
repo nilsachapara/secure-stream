@@ -1,37 +1,42 @@
-# Telegram Filestream Server
+# Telegram Filestream Server (MTProto)
 
-A lightweight Go server that proxies file streams from Telegram Bot API. No MTProto, no session auth — just Bot API.
+A Go server that streams files from Telegram using **MTProto protocol** — no file size limits!
+
+## Features
+
+- **MTProto bot authentication** — unlimited file downloads (no 20MB Bot API limit)
+- **Bot API fallback** — uses faster Bot API for files <20MB
+- **HTTP Range support** — video seeking works for small files
+- **Chunked streaming** — large files stream directly to client
+- **Supabase integration** — reads file records from your database
 
 ## Deploy to Render
 
 1. Create a new **Web Service** on [Render](https://render.com)
-2. Connect this repo
-3. Set environment variables:
+2. Connect the `nilsachapara/secure-stream` repo
+3. Set **Root Directory**: `go-filestream`
+4. Set **Runtime**: Docker
+5. Set environment variables:
    - `TELEGRAM_BOT_TOKEN` — Your bot token from @BotFather
+   - `TELEGRAM_API_ID` — From https://my.telegram.org/apps
+   - `TELEGRAM_API_HASH` — From https://my.telegram.org/apps
    - `SUPABASE_URL` — Your Supabase project URL
    - `SUPABASE_SERVICE_ROLE_KEY` — Your Supabase service role key
-4. Deploy!
-
-## How it works
-
-- Looks up file records in your Supabase `files` table
-- Uses `telegram_msg_id` field as the Telegram file_id
-- Fetches the file URL from Telegram Bot API
-- **Proxies** the content directly to the client (no redirects)
-- Supports HTTP Range requests for video seeking
-
-## Limitations
-
-- Telegram Bot API has a **20MB file size limit** for `getFile`
-- For files >20MB, you'll need MTProto (tdlib/gotd)
+6. Deploy!
 
 ## API Endpoints
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/stream/:id` | Stream a file (supports Range) |
-| `GET /api/download/:id` | Download a file |
+| `GET /api/stream/:id` | Stream a file (Bot API for <20MB, MTProto for >20MB) |
+| `GET /api/download/:id` | Download a file with Content-Disposition |
 | `GET /api/files` | List files from Supabase |
-| `GET /api/auth/status` | Auth status (always OK in Bot API mode) |
-| `POST /api/auth/otp` | OTP handler (no-op in Bot API mode) |
+| `GET /api/auth/status` | MTProto connection status |
 | `GET /health` | Health check |
+
+## How it works
+
+1. Client requests `/api/stream/{file-uuid}`
+2. Server looks up the file record in Supabase
+3. For files ≤20MB: Uses Bot API `getFile` → proxies from Telegram CDN (fast, supports Range)
+4. For files >20MB: Uses MTProto `upload.getFile` → streams directly (no size limit)
