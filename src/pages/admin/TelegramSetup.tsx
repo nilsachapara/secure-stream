@@ -226,10 +226,10 @@ export default function TelegramSetup() {
                   <Label>Backend URL</Label>
                   <div className="flex items-center gap-2">
                     <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Input placeholder="https://your-server.com" value={backendUrl} onChange={(e) => setBackendUrl(e.target.value)} />
+                    <Input placeholder="https://filestream1.onrender.com" value={backendUrl} onChange={(e) => setBackendUrl(e.target.value)} />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Your Go filestream backend URL (the server running main.go)
+                    Your Go filestream backend URL on Render (e.g. https://filestream1.onrender.com)
                   </p>
                 </div>
 
