@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Bot,
   Hash,
+  Globe,
 } from "lucide-react";
 
 type SessionStep = "phone" | "otp" | "2fa" | "done";
