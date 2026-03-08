@@ -35,6 +35,14 @@ export default function Dashboard({ isPrivate = false }: DashboardProps) {
     return file.allowed_users?.includes(user?.id ?? "") ?? false;
   };
 
+  const canStream = (file: typeof files extends (infer T)[] | null ? T : never) => {
+    // First check access permissions
+    if (!canAccess(file)) return false;
+    
+    // All files can be streamed regardless of size - the backend handles routing
+    return true;
+  };
+
   const handleDownload = (fileId: string) => {
     const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy/${fileId}?download=true`;
     window.open(downloadUrl, "_blank");
