@@ -16,7 +16,7 @@ export default function Dashboard({ isPrivate = false }: DashboardProps) {
   const [selectedFile, setSelectedFile] = useState<{ id: string; name: string } | null>(null);
 
   const { data: files, isLoading } = useQuery({
-    queryKey: ["files", isPrivate],
+    queryKey: ["files", isPrivate, user?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("files")
@@ -26,6 +26,7 @@ export default function Dashboard({ isPrivate = false }: DashboardProps) {
       if (error) throw error;
       return data;
     },
+    enabled: !!user,
   });
 
   const canStream = (file: typeof files extends (infer T)[] | null ? T : never) => {

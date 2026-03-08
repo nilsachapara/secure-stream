@@ -54,6 +54,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
