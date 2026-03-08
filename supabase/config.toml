@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.telegram-status]
 verify_jwt = false
+
+[functions.telegram-webhook]
+verify_jwt = false
+
+[functions.stream-proxy]
+verify_jwt = false
