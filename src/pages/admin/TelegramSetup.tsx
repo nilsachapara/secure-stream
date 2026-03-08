@@ -30,6 +30,7 @@ export default function TelegramSetup() {
   const [apiId, setApiId] = useState("");
   const [apiHash, setApiHash] = useState("");
   const [botToken, setBotToken] = useState("");
+  const [phone, setPhone] = useState("");
   const [backendUrl, setBackendUrl] = useState("");
 
   // Auth state
@@ -48,6 +49,7 @@ export default function TelegramSetup() {
           "telegram_api_id",
           "telegram_api_hash",
           "telegram_bot_token",
+          "telegram_phone",
           "telegram_backend_url",
         ]);
       if (error) throw error;
@@ -58,6 +60,7 @@ export default function TelegramSetup() {
       if (map.telegram_api_id) setApiId(map.telegram_api_id);
       if (map.telegram_api_hash) setApiHash(map.telegram_api_hash);
       if (map.telegram_bot_token) setBotToken(map.telegram_bot_token);
+      if (map.telegram_phone) setPhone(map.telegram_phone);
       if (map.telegram_backend_url) setBackendUrl(map.telegram_backend_url);
 
       return map;
@@ -85,6 +88,7 @@ export default function TelegramSetup() {
         { key: "telegram_api_id", value: apiId },
         { key: "telegram_api_hash", value: apiHash },
         { key: "telegram_bot_token", value: botToken },
+        { key: "telegram_phone", value: phone },
         { key: "telegram_backend_url", value: backendUrl },
       ];
 
@@ -205,6 +209,17 @@ export default function TelegramSetup() {
                     <Bot className="w-4 h-4 text-muted-foreground shrink-0" />
                     <Input type="password" placeholder="123456:ABC-DEF..." value={botToken} onChange={(e) => setBotToken(e.target.value)} />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Phone Number</Label>
+                  <div className="flex items-center gap-2">
+                    <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Input placeholder="+911234567890" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Phone number linked to your Telegram account (with country code)
+                  </p>
                 </div>
 
                 <div className="space-y-2">
