@@ -237,6 +237,7 @@ export default function TelegramSetup() {
                   </p>
                 </div>
 
+                <Button
                   onClick={() => saveCredentials.mutate()}
                   disabled={saveCredentials.isPending || !apiId}
                   className="w-full"
