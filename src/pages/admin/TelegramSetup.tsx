@@ -10,7 +10,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   Loader2,
-  Phone,
   KeyRound,
   ShieldCheck,
   CheckCircle2,
@@ -20,24 +19,25 @@ import {
   Bot,
   Hash,
   Globe,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
-
-type SessionStep = "phone" | "otp" | "2fa" | "done";
 
 export default function TelegramSetup() {
   const queryClient = useQueryClient();
 
+  // Credentials state
   const [apiId, setApiId] = useState("");
   const [apiHash, setApiHash] = useState("");
   const [botToken, setBotToken] = useState("");
   const [backendUrl, setBackendUrl] = useState("");
 
-  const [step, setStep] = useState<SessionStep>("phone");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
+  // Auth state
+  const [otpCode, setOtpCode] = useState("");
   const [password2fa, setPassword2fa] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Load saved credentials
   const { data: savedSettings, isLoading: loadingSettings } = useQuery({
     queryKey: ["telegram-settings"],
     queryFn: async () => {
@@ -49,7 +49,6 @@ export default function TelegramSetup() {
           "telegram_api_hash",
           "telegram_bot_token",
           "telegram_backend_url",
-          "telegram_session_string",
         ]);
       if (error) throw error;
 
@@ -60,15 +59,26 @@ export default function TelegramSetup() {
       if (map.telegram_api_hash) setApiHash(map.telegram_api_hash);
       if (map.telegram_bot_token) setBotToken(map.telegram_bot_token);
       if (map.telegram_backend_url) setBackendUrl(map.telegram_backend_url);
-      if (map.telegram_session_string) setStep("done");
 
       return map;
     },
   });
 
-  const hasSession = !!savedSettings?.telegram_session_string;
-  const hasCreds = !!savedSettings?.telegram_api_id;
+  const hasCreds = !!savedSettings?.telegram_api_id && !!savedSettings?.telegram_backend_url;
 
+  // Check backend auth status
+  const { data: authStatus, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
+    queryKey: ["telegram-auth-status"],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("telegram-status");
+      if (error) return { authenticated: false, error: error.message };
+      return data;
+    },
+    enabled: hasCreds,
+    refetchInterval: 10000,
+  });
+
+  // Save credentials
   const saveCredentials = useMutation({
     mutationFn: async () => {
       const entries = [
@@ -89,20 +99,23 @@ export default function TelegramSetup() {
     onSuccess: () => {
       toast.success("Credentials saved successfully");
       queryClient.invalidateQueries({ queryKey: ["telegram-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["telegram-auth-status"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const sendOtp = async () => {
+  // Submit OTP code
+  const submitOtp = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("telegram-send-otp", {
-        body: { phone },
+      const { data, error } = await supabase.functions.invoke("telegram-auth", {
+        body: { code: otpCode },
       });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
-      toast.success("OTP sent to your Telegram");
-      setStep("otp");
+      toast.success("OTP submitted successfully");
+      setOtpCode("");
+      refetchStatus();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -110,47 +123,18 @@ export default function TelegramSetup() {
     }
   };
 
-  const verifyOtp = async () => {
+  // Submit 2FA password
+  const submit2fa = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("telegram-verify-otp", {
-        body: { phone, otp },
+      const { data, error } = await supabase.functions.invoke("telegram-auth", {
+        body: { password: password2fa },
       });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
-      if (data.requires_2fa) {
-        setStep("2fa");
-      } else if (data.session_string) {
-        toast.success("Telegram linked successfully!");
-        setStep("done");
-        queryClient.invalidateQueries({ queryKey: ["telegram-settings"] });
-        queryClient.invalidateQueries({ queryKey: ["telegram-session-status"] });
-      } else {
-        throw new Error("Unexpected response");
-      }
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const verify2fa = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("telegram-verify-2fa", {
-        body: { phone, password: password2fa },
-      });
-      if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      if (data.session_string) {
-        toast.success("Telegram linked successfully!");
-        setStep("done");
-        queryClient.invalidateQueries({ queryKey: ["telegram-settings"] });
-        queryClient.invalidateQueries({ queryKey: ["telegram-session-status"] });
-      } else {
-        throw new Error("Failed to verify 2FA");
-      }
+      toast.success("2FA password submitted successfully");
+      setPassword2fa("");
+      refetchStatus();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -180,23 +164,20 @@ export default function TelegramSetup() {
               Credentials
             </TabsTrigger>
             <TabsTrigger value="session" className="flex-1 gap-2">
-              <Phone className="w-4 h-4" />
-              Session
+              <ShieldCheck className="w-4 h-4" />
+              Auth Status
             </TabsTrigger>
           </TabsList>
 
+          {/* ---- CREDENTIALS TAB ---- */}
           <TabsContent value="credentials">
             <Card className="glass-panel">
               <CardHeader>
                 <CardTitle className="font-display text-lg">API Credentials</CardTitle>
                 <CardDescription>
-                  Get these from{" "}
-                  <a
-                    href="https://my.telegram.org/apps"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary underline inline-flex items-center gap-1"
-                  >
+                  Get API ID & Hash from{" "}
+                  <a href="https://my.telegram.org/apps" target="_blank" rel="noopener noreferrer"
+                    className="text-primary underline inline-flex items-center gap-1">
                     my.telegram.org <ExternalLink className="w-3 h-3" />
                   </a>
                 </CardDescription>
@@ -219,7 +200,7 @@ export default function TelegramSetup() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Bot Token <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                  <Label>Bot Token</Label>
                   <div className="flex items-center gap-2">
                     <Bot className="w-4 h-4 text-muted-foreground shrink-0" />
                     <Input type="password" placeholder="123456:ABC-DEF..." value={botToken} onChange={(e) => setBotToken(e.target.value)} />
@@ -230,29 +211,22 @@ export default function TelegramSetup() {
                   <Label>Backend URL</Label>
                   <div className="flex items-center gap-2">
                     <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Input placeholder="https://your-bridge.example.com" value={backendUrl} onChange={(e) => setBackendUrl(e.target.value)} />
+                    <Input placeholder="https://your-server.com" value={backendUrl} onChange={(e) => setBackendUrl(e.target.value)} />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Your Node.js MTProto bridge server URL
+                    Your Go filestream backend URL (the server running main.go)
                   </p>
                 </div>
 
-                <Button
-                  onClick={() => saveCredentials.mutate()}
-                  disabled={saveCredentials.isPending || !apiId}
-                  className="w-full"
-                >
+                <Button onClick={() => saveCredentials.mutate()} disabled={saveCredentials.isPending || !apiId || !backendUrl} className="w-full">
                   {saveCredentials.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <>
-                      <Save className="w-4 h-4 mr-2" />
-                      Save Credentials
-                    </>
+                    <><Save className="w-4 h-4 mr-2" /> Save Credentials</>
                   )}
                 </Button>
 
-                {savedSettings?.telegram_api_id && (
+                {savedSettings?.telegram_api_id && savedSettings?.telegram_backend_url && (
                   <p className="text-xs text-success flex items-center gap-1.5 justify-center pt-2">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Credentials saved
@@ -262,81 +236,75 @@ export default function TelegramSetup() {
             </Card>
           </TabsContent>
 
+          {/* ---- AUTH STATUS TAB ---- */}
           <TabsContent value="session">
             <Card className="glass-panel">
               <CardHeader>
-                <CardTitle className="font-display text-lg">
-                  {step === "done" ? "Session Active" : "Link Telegram Account"}
+                <CardTitle className="font-display text-lg flex items-center justify-between">
+                  Backend Auth Status
+                  <Button variant="ghost" size="icon" onClick={() => refetchStatus()} disabled={statusLoading}>
+                    <RefreshCw className={`w-4 h-4 ${statusLoading ? "animate-spin" : ""}`} />
+                  </Button>
                 </CardTitle>
                 <CardDescription>
-                  {step === "done"
-                    ? "Your Telegram session is active and connected."
-                    : !hasCreds
-                      ? "⚠️ Save your credentials first in the Credentials tab."
-                      : "Complete the MTProto login to link your Telegram account."}
+                  {!hasCreds
+                    ? "⚠️ Save your credentials first in the Credentials tab."
+                    : "Your Go backend handles MTProto auth. Submit OTP/2FA codes here."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {step === "phone" && (
+                {!hasCreds ? (
+                  <div className="flex items-center gap-2 text-sm text-destructive">
+                    <AlertCircle className="w-4 h-4" />
+                    Save backend URL and credentials first.
+                  </div>
+                ) : (
                   <>
-                    <div className="space-y-2">
-                      <Label>Phone Number</Label>
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <Input placeholder="+1234567890" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                    {/* Status indicator */}
+                    <div className="rounded-lg border border-border p-4 flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${authStatus?.authenticated ? "bg-success" : "bg-warning"}`}
+                        style={{ boxShadow: `0 0 8px ${authStatus?.authenticated ? "hsl(var(--success) / 0.5)" : "hsl(var(--warning) / 0.5)"}` }}
+                      />
+                      <div>
+                        <p className="text-sm font-medium">
+                          {statusLoading ? "Checking..." : authStatus?.authenticated ? "Authenticated" : "Waiting for auth"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {authStatus?.authenticated
+                            ? "MTProto session is active"
+                            : "Backend is waiting for OTP code or 2FA password"}
+                        </p>
                       </div>
                     </div>
-                    <Button onClick={sendOtp} disabled={loading || !phone || !hasCreds} className="w-full">
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send OTP"}
-                    </Button>
-                    {!hasCreds && (
-                      <p className="text-xs text-destructive text-center">
-                        Save credentials first before starting a session.
-                      </p>
-                    )}
-                  </>
-                )}
 
-                {step === "otp" && (
-                  <>
+                    {/* OTP input */}
                     <div className="space-y-2">
                       <Label>OTP Code</Label>
-                      <div className="flex items-center gap-2">
-                        <KeyRound className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <Input placeholder="12345" value={otp} onChange={(e) => setOtp(e.target.value)} />
+                      <p className="text-xs text-muted-foreground">
+                        When your backend starts, it sends an OTP to your Telegram. Enter it here:
+                      </p>
+                      <div className="flex gap-2">
+                        <Input placeholder="12345" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} />
+                        <Button onClick={submitOtp} disabled={loading || !otpCode} className="shrink-0">
+                          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit"}
+                        </Button>
                       </div>
                     </div>
-                    <Button onClick={verifyOtp} disabled={loading || !otp} className="w-full">
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify OTP"}
-                    </Button>
-                  </>
-                )}
 
-                {step === "2fa" && (
-                  <>
+                    {/* 2FA input */}
                     <div className="space-y-2">
-                      <Label>2FA Password</Label>
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <Input type="password" placeholder="Your 2FA password" value={password2fa} onChange={(e) => setPassword2fa(e.target.value)} />
+                      <Label>2FA Password <span className="text-muted-foreground text-xs">(if required)</span></Label>
+                      <p className="text-xs text-muted-foreground">
+                        If your account has 2FA enabled, enter the password after OTP:
+                      </p>
+                      <div className="flex gap-2">
+                        <Input type="password" placeholder="2FA password" value={password2fa} onChange={(e) => setPassword2fa(e.target.value)} />
+                        <Button onClick={submit2fa} disabled={loading || !password2fa} className="shrink-0">
+                          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit"}
+                        </Button>
                       </div>
                     </div>
-                    <Button onClick={verify2fa} disabled={loading || !password2fa} className="w-full">
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify 2FA"}
-                    </Button>
                   </>
-                )}
-
-                {step === "done" && (
-                  <div className="flex flex-col items-center gap-3 py-6">
-                    <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center">
-                      <CheckCircle2 className="w-6 h-6 text-success" />
-                    </div>
-                    <span className="font-medium text-success">Telegram is connected</span>
-                    <Button variant="outline" size="sm" onClick={() => setStep("phone")}>
-                      Re-authenticate
-                    </Button>
-                  </div>
                 )}
               </CardContent>
             </Card>

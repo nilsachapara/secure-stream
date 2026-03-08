@@ -26,6 +26,7 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
+    // Verify admin
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return jsonResponse({ error: "No authorization header" }, 401);
     const token = authHeader.replace("Bearer ", "");
@@ -36,8 +37,7 @@ serve(async (req) => {
       .from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle();
     if (!roleData) return jsonResponse({ error: "Admin access required" }, 403);
 
-    const { phone, otp } = await req.json();
-
+    // Get backend URL
     const { data: settings } = await supabaseAdmin
       .from("system_settings").select("key, value").eq("key", "telegram_backend_url").maybeSingle();
     const backendUrl = settings?.value;
@@ -45,33 +45,21 @@ serve(async (req) => {
 
     let res: Response;
     try {
-      res = await fetch(`${backendUrl}/telegram/verify-otp`, {
-        method: "POST",
+      res = await fetch(`${backendUrl}/api/auth/status`, {
+        method: "GET",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, otp }),
       });
     } catch (fetchErr) {
       return jsonResponse({ error: `Cannot reach backend: ${fetchErr.message}` }, 502);
     }
 
     const responseText = await res.text();
-    let data: Record<string, unknown>;
     try {
-      data = JSON.parse(responseText);
+      const data = JSON.parse(responseText);
+      return jsonResponse(data, res.status);
     } catch {
-      return jsonResponse({ error: "Backend returned invalid response" }, 502);
+      return jsonResponse({ message: responseText, success: res.ok }, res.status);
     }
-
-    if (!res.ok) return jsonResponse({ error: (data as any).message || "Backend error" }, res.status);
-
-    // Save session string if returned
-    if (data.session_string) {
-      await supabaseAdmin
-        .from("system_settings")
-        .upsert({ key: "telegram_session_string", value: data.session_string as string }, { onConflict: "key" });
-    }
-
-    return jsonResponse(data);
   } catch (err) {
     return jsonResponse({ error: err.message || "Unexpected error" }, 500);
   }
