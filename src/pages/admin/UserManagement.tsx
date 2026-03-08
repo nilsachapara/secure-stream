@@ -21,7 +21,6 @@ export default function UserManagement() {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || "";
 
   const { data: profiles, isLoading } = useQuery({
     queryKey: ["admin-profiles"],
@@ -34,20 +33,12 @@ export default function UserManagement() {
 
   const createUser = useMutation({
     mutationFn: async () => {
-      // Use the backend bridge to create users (admin-only endpoint)
-      const res = await fetch(`${backendUrl}/admin/create-user`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-        },
-        body: JSON.stringify({ email, password }),
+      const { data, error } = await supabase.functions.invoke("create-user", {
+        body: { email, password, role: "user" },
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Failed to create user");
-      }
-      return res.json();
+      if (error) throw new Error(error.message || "Failed to create user");
+      if (data?.error) throw new Error(data.error);
+      return data;
     },
     onSuccess: () => {
       toast.success("User created successfully");
