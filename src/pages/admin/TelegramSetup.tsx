@@ -2,25 +2,47 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   Loader2,
-  ShieldCheck,
   CheckCircle2,
   RefreshCw,
   AlertCircle,
   Bot,
   Webhook,
   Trash2,
+  Globe,
+  Save,
+  Settings,
+  ShieldCheck,
 } from "lucide-react";
 
 export default function TelegramSetup() {
   const queryClient = useQueryClient();
-  const [loading, setLoading] = useState(false);
+  const [backendUrl, setBackendUrl] = useState("");
 
-  // Check bot status & webhook info
+  // Load saved backend URL
+  const { data: savedSettings, isLoading: loadingSettings } = useQuery({
+    queryKey: ["telegram-settings"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select("key, value")
+        .in("key", ["telegram_backend_url"]);
+      if (error) throw error;
+      const map: Record<string, string> = {};
+      data?.forEach((r) => (map[r.key] = r.value));
+      if (map.telegram_backend_url) setBackendUrl(map.telegram_backend_url);
+      return map;
+    },
+  });
+
+  // Check bot status
   const { data: authStatus, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
     queryKey: ["telegram-auth-status"],
     queryFn: async () => {
@@ -29,6 +51,22 @@ export default function TelegramSetup() {
       return data;
     },
     refetchInterval: 15000,
+  });
+
+  // Save backend URL
+  const saveBackendUrl = useMutation({
+    mutationFn: async () => {
+      if (!backendUrl) return;
+      const { error } = await supabase
+        .from("system_settings")
+        .upsert({ key: "telegram_backend_url", value: backendUrl }, { onConflict: "key" });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Backend URL saved");
+      queryClient.invalidateQueries({ queryKey: ["telegram-settings"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   // Set webhook
@@ -42,7 +80,7 @@ export default function TelegramSetup() {
       return data;
     },
     onSuccess: (data) => {
-      toast.success(data?.description || "Webhook set successfully!");
+      toast.success(data?.description || "Webhook set!");
       refetchStatus();
     },
     onError: (err: Error) => toast.error(err.message),
@@ -55,7 +93,6 @@ export default function TelegramSetup() {
         body: { action: "delete-webhook" },
       });
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
       return data;
     },
     onSuccess: () => {
@@ -67,117 +104,183 @@ export default function TelegramSetup() {
 
   const webhookUrl = authStatus?.webhook?.url;
   const hasWebhook = !!webhookUrl;
-  const pendingUpdateCount = authStatus?.webhook?.pending_update_count ?? 0;
+  const hasBackend = !!savedSettings?.telegram_backend_url;
+
+  if (loadingSettings) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto">
         <h1 className="text-2xl font-display font-bold mb-6">Telegram Setup</h1>
 
-        {/* Bot Status */}
-        <Card className="glass-panel mb-4">
-          <CardHeader>
-            <CardTitle className="font-display text-lg flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <Bot className="w-5 h-5" />
-                Bot Status
-              </span>
-              <Button variant="ghost" size="icon" onClick={() => refetchStatus()} disabled={statusLoading}>
-                <RefreshCw className={`w-4 h-4 ${statusLoading ? "animate-spin" : ""}`} />
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {statusLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="w-4 h-4 animate-spin" /> Checking...
-              </div>
-            ) : authStatus?.authenticated ? (
-              <div className="space-y-3">
-                <div className="rounded-lg border border-border p-4 flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-success"
-                    style={{ boxShadow: "0 0 8px hsl(var(--success) / 0.5)" }} />
-                  <div>
-                    <p className="text-sm font-medium">
-                      @{authStatus.bot?.username} — Connected
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Bot ID: {authStatus.bot?.id}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-sm text-destructive">
-                <AlertCircle className="w-4 h-4" />
-                {authStatus?.error || "Bot token not configured. Add TELEGRAM_BOT_TOKEN in Cloud Secrets."}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="status">
+          <TabsList className="mb-4 w-full">
+            <TabsTrigger value="status" className="flex-1 gap-2">
+              <ShieldCheck className="w-4 h-4" />
+              Status
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="flex-1 gap-2">
+              <Settings className="w-4 h-4" />
+              Settings
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Webhook Config */}
-        <Card className="glass-panel">
-          <CardHeader>
-            <CardTitle className="font-display text-lg flex items-center gap-2">
-              <Webhook className="w-5 h-5" />
-              Webhook
-            </CardTitle>
-            <CardDescription>
-              The webhook auto-inserts files into the database when sent to your bot.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {hasWebhook ? (
-              <>
-                <div className="rounded-lg border border-border p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-success" />
-                    <p className="text-sm font-medium">Webhook Active</p>
+          {/* STATUS TAB */}
+          <TabsContent value="status" className="space-y-4">
+            {/* Bot Status */}
+            <Card className="glass-panel">
+              <CardHeader>
+                <CardTitle className="font-display text-lg flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Bot className="w-5 h-5" /> Bot Status
+                  </span>
+                  <Button variant="ghost" size="icon" onClick={() => refetchStatus()} disabled={statusLoading}>
+                    <RefreshCw className={`w-4 h-4 ${statusLoading ? "animate-spin" : ""}`} />
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {statusLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Checking...
                   </div>
-                  <p className="text-xs text-muted-foreground break-all">
-                    {webhookUrl}
+                ) : authStatus?.authenticated ? (
+                  <div className="rounded-lg border border-border p-4 flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full bg-success"
+                      style={{ boxShadow: "0 0 8px hsl(var(--success) / 0.5)" }} />
+                    <div>
+                      <p className="text-sm font-medium">@{authStatus.bot?.username} — Connected</p>
+                      <p className="text-xs text-muted-foreground">Bot ID: {authStatus.bot?.id}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-destructive">
+                    <AlertCircle className="w-4 h-4" />
+                    {authStatus?.error || "Bot not connected"}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Webhook */}
+            <Card className="glass-panel">
+              <CardHeader>
+                <CardTitle className="font-display text-lg flex items-center gap-2">
+                  <Webhook className="w-5 h-5" /> Webhook
+                </CardTitle>
+                <CardDescription>
+                  Auto-inserts files into the database when sent to your bot.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {hasWebhook ? (
+                  <>
+                    <div className="rounded-lg border border-border p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-success" />
+                        <p className="text-sm font-medium">Webhook Active</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground break-all">{webhookUrl}</p>
+                      {authStatus?.webhook?.pending_update_count > 0 && (
+                        <p className="text-xs text-warning">{authStatus.webhook.pending_update_count} pending</p>
+                      )}
+                      {authStatus?.webhook?.last_error_message && (
+                        <p className="text-xs text-destructive">Error: {authStatus.webhook.last_error_message}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={() => setWebhook.mutate()} disabled={setWebhook.isPending} className="flex-1">
+                        {setWebhook.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><RefreshCw className="w-4 h-4 mr-2" /> Re-set</>}
+                      </Button>
+                      <Button variant="destructive" onClick={() => deleteWebhook.mutate()} disabled={deleteWebhook.isPending}>
+                        {deleteWebhook.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-lg border border-border p-4 flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-warning"
+                        style={{ boxShadow: "0 0 8px hsl(var(--warning) / 0.5)" }} />
+                      <p className="text-sm">No webhook set</p>
+                    </div>
+                    <Button onClick={() => setWebhook.mutate()} disabled={setWebhook.isPending || !authStatus?.authenticated} className="w-full">
+                      {setWebhook.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Webhook className="w-4 h-4 mr-2" /> Set Webhook</>}
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Backend Status */}
+            <Card className="glass-panel">
+              <CardHeader>
+                <CardTitle className="font-display text-lg flex items-center gap-2">
+                  <Globe className="w-5 h-5" /> MTProto Backend
+                </CardTitle>
+                <CardDescription>
+                  Go backend on Render for streaming files &gt;20MB.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {hasBackend ? (
+                  <div className="rounded-lg border border-border p-4 flex items-center gap-3">
+                    <CheckCircle2 className="w-4 h-4 text-success" />
+                    <div>
+                      <p className="text-sm font-medium">Backend configured</p>
+                      <p className="text-xs text-muted-foreground break-all">{savedSettings?.telegram_backend_url}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-warning">
+                    <AlertCircle className="w-4 h-4" />
+                    No backend URL set. Files &gt;20MB won't stream. Configure in Settings tab.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* SETTINGS TAB */}
+          <TabsContent value="settings">
+            <Card className="glass-panel">
+              <CardHeader>
+                <CardTitle className="font-display text-lg">Backend URL</CardTitle>
+                <CardDescription>
+                  Your Go MTProto server on Render. Required for streaming files &gt;20MB.
+                  Files ≤20MB work without it via Bot API.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Render Backend URL</Label>
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Input
+                      placeholder="https://your-app.onrender.com"
+                      value={backendUrl}
+                      onChange={(e) => setBackendUrl(e.target.value)}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Deploy go-filestream to Render, then paste the URL here.
                   </p>
-                  {pendingUpdateCount > 0 && (
-                    <p className="text-xs text-warning">
-                      {pendingUpdateCount} pending updates
-                    </p>
-                  )}
-                  {authStatus?.webhook?.last_error_message && (
-                    <p className="text-xs text-destructive">
-                      Last error: {authStatus.webhook.last_error_message}
-                    </p>
-                  )}
                 </div>
-                <div className="flex gap-2">
-                  <Button onClick={() => setWebhook.mutate()} disabled={setWebhook.isPending} className="flex-1">
-                    {setWebhook.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                      <><RefreshCw className="w-4 h-4 mr-2" /> Re-set Webhook</>
-                    )}
-                  </Button>
-                  <Button variant="destructive" onClick={() => deleteWebhook.mutate()} disabled={deleteWebhook.isPending}>
-                    {deleteWebhook.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="rounded-lg border border-border p-4 flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-warning"
-                    style={{ boxShadow: "0 0 8px hsl(var(--warning) / 0.5)" }} />
-                  <p className="text-sm">No webhook set. Click below to activate.</p>
-                </div>
-                <Button onClick={() => setWebhook.mutate()} disabled={setWebhook.isPending || !authStatus?.authenticated} className="w-full">
-                  {setWebhook.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                    <><Webhook className="w-4 h-4 mr-2" /> Set Webhook</>
-                  )}
+                <Button onClick={() => saveBackendUrl.mutate()} disabled={saveBackendUrl.isPending || !backendUrl} className="w-full">
+                  {saveBackendUrl.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4 mr-2" /> Save</>}
                 </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );
