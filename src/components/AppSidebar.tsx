@@ -23,7 +23,7 @@ export function AppSidebar() {
   const location = useLocation();
 
   const mainItems = [
-    { title: "Public Files", url: "/", icon: Files },
+    { title: "Public Files", url: "/dashboard", icon: Files },
     { title: "Private Files", url: "/private", icon: Lock },
   ];
 
