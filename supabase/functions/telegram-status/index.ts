@@ -41,26 +41,38 @@ serve(async (req) => {
     const { data: settings } = await supabaseAdmin
       .from("system_settings").select("key, value").eq("key", "telegram_backend_url").maybeSingle();
     const backendUrl = settings?.value;
-    if (!backendUrl) return jsonResponse({ error: "Backend URL not configured" }, 400);
+    if (!backendUrl) return jsonResponse({ error: "Backend URL not configured", authenticated: false }, 400);
+
+    // Strip trailing slash
+    const baseUrl = backendUrl.replace(/\/+$/, "");
 
     let res: Response;
     try {
-      res = await fetch(`${backendUrl}/api/auth/status`, {
+      res = await fetch(`${baseUrl}/api/auth/status`, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       });
     } catch (fetchErr) {
-      return jsonResponse({ error: `Cannot reach backend: ${fetchErr.message}` }, 502);
+      return jsonResponse({ authenticated: false, error: `Cannot reach backend: ${fetchErr.message}` }, 200);
     }
 
     const responseText = await res.text();
+    
+    // Check if response is HTML (wrong URL)
+    if (responseText.trimStart().startsWith("<!") || responseText.trimStart().startsWith("<html")) {
+      return jsonResponse({ 
+        authenticated: false, 
+        error: "Backend URL returned HTML instead of JSON. Make sure the URL points to your Go filestream server (e.g. https://filestream1.onrender.com), not a website." 
+      }, 200);
+    }
+
     try {
       const data = JSON.parse(responseText);
       return jsonResponse(data, res.status);
     } catch {
-      return jsonResponse({ message: responseText, success: res.ok }, res.status);
+      return jsonResponse({ authenticated: false, message: responseText }, res.status);
     }
   } catch (err) {
-    return jsonResponse({ error: err.message || "Unexpected error" }, 500);
+    return jsonResponse({ authenticated: false, error: err.message || "Unexpected error" }, 500);
   }
 });
