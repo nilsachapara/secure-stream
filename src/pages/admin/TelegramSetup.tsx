@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Bot,
   Hash,
+  Globe,
 } from "lucide-react";
 
 type SessionStep = "phone" | "otp" | "2fa" | "done";
@@ -29,6 +30,7 @@ export default function TelegramSetup() {
   const [apiId, setApiId] = useState("");
   const [apiHash, setApiHash] = useState("");
   const [botToken, setBotToken] = useState("");
+  const [backendUrl, setBackendUrl] = useState("");
 
   const [step, setStep] = useState<SessionStep>("phone");
   const [phone, setPhone] = useState("");
@@ -46,6 +48,7 @@ export default function TelegramSetup() {
           "telegram_api_id",
           "telegram_api_hash",
           "telegram_bot_token",
+          "telegram_backend_url",
           "telegram_session_string",
         ]);
       if (error) throw error;
@@ -56,6 +59,7 @@ export default function TelegramSetup() {
       if (map.telegram_api_id) setApiId(map.telegram_api_id);
       if (map.telegram_api_hash) setApiHash(map.telegram_api_hash);
       if (map.telegram_bot_token) setBotToken(map.telegram_bot_token);
+      if (map.telegram_backend_url) setBackendUrl(map.telegram_backend_url);
       if (map.telegram_session_string) setStep("done");
 
       return map;
@@ -71,6 +75,7 @@ export default function TelegramSetup() {
         { key: "telegram_api_id", value: apiId },
         { key: "telegram_api_hash", value: apiHash },
         { key: "telegram_bot_token", value: botToken },
+        { key: "telegram_backend_url", value: backendUrl },
       ];
 
       for (const entry of entries) {
@@ -219,6 +224,17 @@ export default function TelegramSetup() {
                     <Bot className="w-4 h-4 text-muted-foreground shrink-0" />
                     <Input type="password" placeholder="123456:ABC-DEF..." value={botToken} onChange={(e) => setBotToken(e.target.value)} />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Backend URL</Label>
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Input placeholder="https://your-bridge.example.com" value={backendUrl} onChange={(e) => setBackendUrl(e.target.value)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Your Node.js MTProto bridge server URL
+                  </p>
                 </div>
 
                 <Button
