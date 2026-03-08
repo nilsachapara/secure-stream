@@ -8,6 +8,3 @@ verify_jwt = false
 
 [functions.telegram-status]
 verify_jwt = false
-
-[functions.get-service-key]
-verify_jwt = false
