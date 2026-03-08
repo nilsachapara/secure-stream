@@ -128,7 +128,10 @@ serve(async (req) => {
       if (val) responseHeaders[h] = val;
     }
 
-    const ext = file.name.split(".").pop()?.toLowerCase();
+    // Extract real filename from possibly caption-polluted name
+    const fileNameMatch = file.name.match(/[\w\-. ]+\.\w{2,5}/);
+    const cleanName = fileNameMatch ? fileNameMatch[0].replace(/\*+/g, "").trim() : file.name;
+    const ext = cleanName.split(".").pop()?.toLowerCase();
     const mimeMap: Record<string, string> = {
       mp4: "video/mp4", mkv: "video/x-matroska", avi: "video/x-msvideo", webm: "video/webm",
       mp3: "audio/mpeg", flac: "audio/flac", pdf: "application/pdf",
@@ -140,7 +143,7 @@ serve(async (req) => {
     responseHeaders["accept-ranges"] = "bytes";
 
     if (url.searchParams.get("download") === "true") {
-      responseHeaders["content-disposition"] = `attachment; filename="${encodeURIComponent(file.name)}"`;
+      responseHeaders["content-disposition"] = `attachment; filename="${encodeURIComponent(cleanName)}"`;
     }
 
     return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });

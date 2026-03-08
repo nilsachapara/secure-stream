@@ -18,7 +18,7 @@ export function VideoPlayerModal({ open, onOpenChange, fileName, fileId }: Video
 
   const streamUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy/${fileId}`;
 
-  const isAudio = /\.(mp3|flac|ogg|wav|aac)$/i.test(fileName);
+  const isAudio = /\.(mp3|flac|ogg|wav|aac)/i.test(fileName);
 
   useEffect(() => {
     if (!open) {
