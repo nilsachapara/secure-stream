@@ -49,6 +49,7 @@ export default function TelegramSetup() {
           "telegram_api_id",
           "telegram_api_hash",
           "telegram_bot_token",
+          "telegram_phone",
           "telegram_backend_url",
         ]);
       if (error) throw error;
