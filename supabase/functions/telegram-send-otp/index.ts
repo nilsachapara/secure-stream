@@ -7,22 +7,35 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !serviceKey) {
+      return jsonResponse({ error: "Server misconfigured: missing environment variables" }, 500);
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
     // Verify caller is admin
-    const authHeader = req.headers.get("Authorization")!;
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return jsonResponse({ error: "No authorization header" }, 401);
+
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    if (authError || !user) throw new Error("Unauthorized");
+    if (authError || !user) return jsonResponse({ error: "Unauthorized" }, 401);
 
     const { data: roleData } = await supabaseAdmin
       .from("user_roles")
@@ -30,40 +43,55 @@ serve(async (req) => {
       .eq("user_id", user.id)
       .eq("role", "admin")
       .maybeSingle();
-    if (!roleData) throw new Error("Admin access required");
+    if (!roleData) return jsonResponse({ error: "Admin access required" }, 403);
 
     const { phone } = await req.json();
-    if (!phone) throw new Error("Phone number required");
+    if (!phone) return jsonResponse({ error: "Phone number required" }, 400);
 
-    // Get saved credentials
+    // Get backend URL
     const { data: settings } = await supabaseAdmin
       .from("system_settings")
       .select("key, value")
-      .in("key", ["telegram_api_id", "telegram_api_hash", "telegram_backend_url"]);
+      .eq("key", "telegram_backend_url")
+      .maybeSingle();
 
-    const config: Record<string, string> = {};
-    settings?.forEach((s: any) => (config[s.key] = s.value));
-
-    const backendUrl = config.telegram_backend_url;
-    if (!backendUrl) throw new Error("Backend URL not configured. Save it in Telegram Setup credentials first.");
+    const backendUrl = settings?.value;
+    if (!backendUrl) {
+      return jsonResponse({
+        error: "Backend URL not configured. Go to Telegram Setup → Credentials tab and save your MTProto bridge URL."
+      }, 400);
+    }
 
     // Forward to MTProto bridge
-    const res = await fetch(`${backendUrl}/telegram/send-otp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${backendUrl}/telegram/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      });
+    } catch (fetchErr) {
+      return jsonResponse({ error: `Cannot reach backend at ${backendUrl}: ${fetchErr.message}` }, 502);
+    }
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || "Failed to send OTP");
+    const responseText = await res.text();
 
-    return new Response(JSON.stringify(data), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    if (!res.ok) {
+      try {
+        const errJson = JSON.parse(responseText);
+        return jsonResponse({ error: errJson.message || errJson.error || "Backend error" }, res.status);
+      } catch {
+        return jsonResponse({ error: `Backend returned non-JSON response (status ${res.status})` }, 502);
+      }
+    }
+
+    try {
+      const data = JSON.parse(responseText);
+      return jsonResponse(data);
+    } catch {
+      return jsonResponse({ error: "Backend returned invalid JSON" }, 502);
+    }
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: err.message || "Unexpected error" }, 500);
   }
 });
