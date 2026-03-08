@@ -72,7 +72,7 @@ export default function Dashboard({ isPrivate = false }: DashboardProps) {
                 key={file.id}
                 name={file.name}
                 size={file.size}
-                canStream={canAccess(file)}
+                canStream={canStream(file)}
                 onStream={() => setSelectedFile({ id: file.id, name: file.name })}
                 onDownload={() => handleDownload(file.id)}
               />

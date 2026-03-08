@@ -46,7 +46,9 @@ export function FileCard({ name, size, canStream, onStream, onDownload }: FileCa
           <Icon className="w-5 h-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-medium truncate text-sm">{name}</p>
+          <p className="font-medium text-sm overflow-hidden text-ellipsis whitespace-nowrap max-w-[200px]" title={name}>
+            {name}
+          </p>
           <p className="text-xs text-muted-foreground">{formatSize(size)}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
