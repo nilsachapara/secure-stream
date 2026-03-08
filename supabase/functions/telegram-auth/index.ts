@@ -45,25 +45,33 @@ serve(async (req) => {
     const backendUrl = settings?.value;
     if (!backendUrl) return jsonResponse({ error: "Backend URL not configured. Save it in Telegram Setup → Credentials tab." }, 400);
 
+    const baseUrl = backendUrl.replace(/\/+$/, "");
+
     // The Go backend uses POST /api/auth/otp for both OTP code and 2FA password
-    // body should be { "code": "12345" } or { "password": "your_password" }
     let res: Response;
     try {
-      res = await fetch(`${backendUrl}/api/auth/otp`, {
+      res = await fetch(`${baseUrl}/api/auth/otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
     } catch (fetchErr) {
-      return jsonResponse({ error: `Cannot reach backend at ${backendUrl}: ${fetchErr.message}` }, 502);
+      return jsonResponse({ error: `Cannot reach backend at ${baseUrl}: ${fetchErr.message}` }, 502);
     }
 
     const responseText = await res.text();
+
+    // Check if response is HTML (wrong URL)
+    if (responseText.trimStart().startsWith("<!") || responseText.trimStart().startsWith("<html")) {
+      return jsonResponse({ 
+        error: "Backend URL returned HTML instead of JSON. Make sure the URL points to your Go filestream server (e.g. https://filestream1.onrender.com), not a website." 
+      }, 400);
+    }
+
     try {
       const data = JSON.parse(responseText);
       return jsonResponse(data, res.status);
     } catch {
-      // Backend might return plain text success
       return jsonResponse({ message: responseText, success: res.ok }, res.status);
     }
   } catch (err) {
