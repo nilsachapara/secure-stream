@@ -81,9 +81,14 @@ serve(async (req) => {
       });
     }
 
-    // Use caption as filename if provided
+    // Try to extract a real filename from caption if it contains one
     if (message.caption) {
-      fileName = message.caption;
+      const captionMatch = message.caption.match(/[\w\-. ]+\.\w{2,5}/);
+      if (captionMatch) {
+        // Clean markdown bold markers
+        fileName = captionMatch[0].replace(/\*+/g, "").trim();
+      }
+      // Otherwise keep the original file_name from Telegram, don't use raw caption
     }
 
     // Insert into files table
