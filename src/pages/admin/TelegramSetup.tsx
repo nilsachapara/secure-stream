@@ -59,6 +59,7 @@ export default function TelegramSetup() {
       if (map.telegram_api_id) setApiId(map.telegram_api_id);
       if (map.telegram_api_hash) setApiHash(map.telegram_api_hash);
       if (map.telegram_bot_token) setBotToken(map.telegram_bot_token);
+      if (map.telegram_backend_url) setBackendUrl(map.telegram_backend_url);
       if (map.telegram_session_string) setStep("done");
 
       return map;
