@@ -3,11 +3,8 @@ project_id = "arqfzzracvkgkazxlkcb"
 [functions.create-user]
 verify_jwt = false
 
-[functions.telegram-send-otp]
+[functions.telegram-auth]
 verify_jwt = false
 
-[functions.telegram-verify-otp]
-verify_jwt = false
-
-[functions.telegram-verify-2fa]
+[functions.telegram-status]
 verify_jwt = false
