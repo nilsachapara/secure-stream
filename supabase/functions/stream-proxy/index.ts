@@ -143,7 +143,7 @@ serve(async (req) => {
     responseHeaders["accept-ranges"] = "bytes";
 
     if (url.searchParams.get("download") === "true") {
-      responseHeaders["content-disposition"] = `attachment; filename="${encodeURIComponent(file.name)}"`;
+      responseHeaders["content-disposition"] = `attachment; filename="${encodeURIComponent(cleanName)}"`;
     }
 
     return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
