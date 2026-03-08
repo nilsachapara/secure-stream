@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { supabase } from "@/integrations/supabase/client";
 import videojs from "video.js";
 import "video.js/dist/video-js.css";
 
@@ -13,10 +14,23 @@ interface VideoPlayerModalProps {
 export function VideoPlayerModal({ open, onOpenChange, fileName, fileId }: VideoPlayerModalProps) {
   const videoRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ReturnType<typeof videojs> | null>(null);
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || "";
+  const [backendUrl, setBackendUrl] = useState("");
+
+  // Get backend URL from system settings
+  useEffect(() => {
+    if (!open) return;
+    supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "telegram_backend_url")
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) setBackendUrl(data.value);
+      });
+  }, [open]);
 
   useEffect(() => {
-    if (!open || !videoRef.current) return;
+    if (!open || !videoRef.current || !backendUrl) return;
 
     const videoElement = document.createElement("video-js");
     videoElement.classList.add("vjs-big-play-centered", "vjs-fluid");
@@ -29,7 +43,7 @@ export function VideoPlayerModal({ open, onOpenChange, fileName, fileId }: Video
       fluid: true,
       sources: [
         {
-          src: `${backendUrl}/stream/${fileId}`,
+          src: `${backendUrl}/api/stream/${fileId}`,
           type: "video/mp4",
         },
       ],
@@ -52,6 +66,11 @@ export function VideoPlayerModal({ open, onOpenChange, fileName, fileId }: Video
           <DialogTitle className="font-display">{fileName}</DialogTitle>
         </DialogHeader>
         <div ref={videoRef} className="w-full rounded-lg overflow-hidden bg-secondary" />
+        {!backendUrl && (
+          <p className="text-xs text-muted-foreground text-center">
+            Backend URL not configured — streaming unavailable
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   );
