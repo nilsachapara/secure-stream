@@ -21,7 +21,6 @@ export default function UserManagement() {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || "";
 
   const { data: profiles, isLoading } = useQuery({
     queryKey: ["admin-profiles"],
