@@ -22,17 +22,31 @@ function formatSize(bytes: number | null) {
   return `${size.toFixed(1)} ${units[i]}`;
 }
 
+/** Extract the real filename from a possibly caption-polluted name */
+function extractFileName(name: string): string {
+  // Try to find a filename pattern like "something.ext" in the string
+  const match = name.match(/[\w\-. ]+\.\w{2,5}/);
+  if (match) return match[0].replace(/\*+/g, "").trim();
+  // Fallback: take the first line, strip markdown
+  return name.split("\n")[0].replace(/\*+/g, "").trim().slice(0, 80);
+}
+
+function getExt(name: string): string {
+  const clean = extractFileName(name);
+  return clean.split(".").pop()?.toLowerCase() || "";
+}
+
 function getFileIcon(name: string) {
-  const ext = name.split(".").pop()?.toLowerCase();
-  if (["mp4", "mkv", "avi", "mov", "webm"].includes(ext || "")) return Film;
-  if (["mp3", "flac", "ogg", "wav", "aac"].includes(ext || "")) return Music;
-  if (["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext || "")) return Image;
+  const ext = getExt(name);
+  if (["mp4", "mkv", "avi", "mov", "webm"].includes(ext)) return Film;
+  if (["mp3", "flac", "ogg", "wav", "aac"].includes(ext)) return Music;
+  if (["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext)) return Image;
   return FileText;
 }
 
 function isStreamable(name: string) {
-  const ext = name.split(".").pop()?.toLowerCase();
-  return ["mp4", "mkv", "avi", "mov", "webm", "mp3", "flac", "ogg", "wav"].includes(ext || "");
+  const ext = getExt(name);
+  return ["mp4", "mkv", "avi", "mov", "webm", "mp3", "flac", "ogg", "wav"].includes(ext);
 }
 
 export function FileCard({ name, size, canStream, onStream, onDownload }: FileCardProps) {
