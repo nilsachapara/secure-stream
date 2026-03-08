@@ -30,6 +30,7 @@ export default function TelegramSetup() {
   const [apiId, setApiId] = useState("");
   const [apiHash, setApiHash] = useState("");
   const [botToken, setBotToken] = useState("");
+  const [backendUrl, setBackendUrl] = useState("");
 
   const [step, setStep] = useState<SessionStep>("phone");
   const [phone, setPhone] = useState("");
