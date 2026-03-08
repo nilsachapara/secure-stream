@@ -19,7 +19,6 @@ import {
   ExternalLink,
   Bot,
   Hash,
-  Globe,
 } from "lucide-react";
 
 type SessionStep = "phone" | "otp" | "2fa" | "done";
@@ -27,20 +26,16 @@ type SessionStep = "phone" | "otp" | "2fa" | "done";
 export default function TelegramSetup() {
   const queryClient = useQueryClient();
 
-  // Credentials state
   const [apiId, setApiId] = useState("");
   const [apiHash, setApiHash] = useState("");
   const [botToken, setBotToken] = useState("");
-  const [backendUrl, setBackendUrl] = useState("");
 
-  // Session state
   const [step, setStep] = useState<SessionStep>("phone");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [password2fa, setPassword2fa] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Load saved credentials
   const { data: savedSettings, isLoading: loadingSettings } = useQuery({
     queryKey: ["telegram-settings"],
     queryFn: async () => {
@@ -51,7 +46,6 @@ export default function TelegramSetup() {
           "telegram_api_id",
           "telegram_api_hash",
           "telegram_bot_token",
-          "telegram_backend_url",
           "telegram_session_string",
         ]);
       if (error) throw error;
@@ -59,11 +53,9 @@ export default function TelegramSetup() {
       const map: Record<string, string> = {};
       data?.forEach((r) => (map[r.key] = r.value));
 
-      // Pre-fill fields
       if (map.telegram_api_id) setApiId(map.telegram_api_id);
       if (map.telegram_api_hash) setApiHash(map.telegram_api_hash);
       if (map.telegram_bot_token) setBotToken(map.telegram_bot_token);
-      if (map.telegram_backend_url) setBackendUrl(map.telegram_backend_url);
       if (map.telegram_session_string) setStep("done");
 
       return map;
@@ -71,16 +63,14 @@ export default function TelegramSetup() {
   });
 
   const hasSession = !!savedSettings?.telegram_session_string;
-  const hasCreds = !!savedSettings?.telegram_api_id && !!savedSettings?.telegram_backend_url;
+  const hasCreds = !!savedSettings?.telegram_api_id;
 
-  // Save credentials
   const saveCredentials = useMutation({
     mutationFn: async () => {
       const entries = [
         { key: "telegram_api_id", value: apiId },
         { key: "telegram_api_hash", value: apiHash },
         { key: "telegram_bot_token", value: botToken },
-        { key: "telegram_backend_url", value: backendUrl },
       ];
 
       for (const entry of entries) {
@@ -94,32 +84,18 @@ export default function TelegramSetup() {
     onSuccess: () => {
       toast.success("Credentials saved successfully");
       queryClient.invalidateQueries({ queryKey: ["telegram-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["telegram-session-status"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const getBackendUrl = () => {
-    return backendUrl || savedSettings?.telegram_backend_url || "";
-  };
-
   const sendOtp = async () => {
-    const url = getBackendUrl();
-    if (!url) {
-      toast.error("Please save your Backend URL in the Credentials tab first");
-      return;
-    }
     setLoading(true);
     try {
-      const res = await fetch(`${url}/telegram/send-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+      const { data, error } = await supabase.functions.invoke("telegram-send-otp", {
+        body: { phone },
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || "Failed to send OTP");
-      }
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
       toast.success("OTP sent to your Telegram");
       setStep("otp");
     } catch (err: any) {
@@ -130,19 +106,20 @@ export default function TelegramSetup() {
   };
 
   const verifyOtp = async () => {
-    const url = getBackendUrl();
     setLoading(true);
     try {
-      const res = await fetch(`${url}/telegram/verify-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, otp }),
+      const { data, error } = await supabase.functions.invoke("telegram-verify-otp", {
+        body: { phone, otp },
       });
-      const data = await res.json();
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
       if (data.requires_2fa) {
         setStep("2fa");
       } else if (data.session_string) {
-        await saveSession(data.session_string);
+        toast.success("Telegram linked successfully!");
+        setStep("done");
+        queryClient.invalidateQueries({ queryKey: ["telegram-settings"] });
+        queryClient.invalidateQueries({ queryKey: ["telegram-session-status"] });
       } else {
         throw new Error("Unexpected response");
       }
@@ -154,17 +131,18 @@ export default function TelegramSetup() {
   };
 
   const verify2fa = async () => {
-    const url = getBackendUrl();
     setLoading(true);
     try {
-      const res = await fetch(`${url}/telegram/verify-2fa`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, password: password2fa }),
+      const { data, error } = await supabase.functions.invoke("telegram-verify-2fa", {
+        body: { phone, password: password2fa },
       });
-      const data = await res.json();
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
       if (data.session_string) {
-        await saveSession(data.session_string);
+        toast.success("Telegram linked successfully!");
+        setStep("done");
+        queryClient.invalidateQueries({ queryKey: ["telegram-settings"] });
+        queryClient.invalidateQueries({ queryKey: ["telegram-session-status"] });
       } else {
         throw new Error("Failed to verify 2FA");
       }
@@ -172,20 +150,6 @@ export default function TelegramSetup() {
       toast.error(err.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const saveSession = async (sessionString: string) => {
-    const { error } = await supabase
-      .from("system_settings")
-      .upsert({ key: "telegram_session_string", value: sessionString }, { onConflict: "key" });
-    if (error) {
-      toast.error("Failed to save session");
-    } else {
-      toast.success("Telegram linked successfully!");
-      setStep("done");
-      queryClient.invalidateQueries({ queryKey: ["telegram-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["telegram-session-status"] });
     }
   };
 
@@ -216,7 +180,6 @@ export default function TelegramSetup() {
             </TabsTrigger>
           </TabsList>
 
-          {/* ---- CREDENTIALS TAB ---- */}
           <TabsContent value="credentials">
             <Card className="glass-panel">
               <CardHeader>
@@ -238,11 +201,7 @@ export default function TelegramSetup() {
                   <Label>API ID</Label>
                   <div className="flex items-center gap-2">
                     <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Input
-                      placeholder="123456"
-                      value={apiId}
-                      onChange={(e) => setApiId(e.target.value)}
-                    />
+                    <Input placeholder="123456" value={apiId} onChange={(e) => setApiId(e.target.value)} />
                   </div>
                 </div>
 
@@ -250,12 +209,7 @@ export default function TelegramSetup() {
                   <Label>API Hash</Label>
                   <div className="flex items-center gap-2">
                     <KeyRound className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Input
-                      type="password"
-                      placeholder="Your API hash"
-                      value={apiHash}
-                      onChange={(e) => setApiHash(e.target.value)}
-                    />
+                    <Input type="password" placeholder="Your API hash" value={apiHash} onChange={(e) => setApiHash(e.target.value)} />
                   </div>
                 </div>
 
@@ -263,33 +217,13 @@ export default function TelegramSetup() {
                   <Label>Bot Token <span className="text-muted-foreground text-xs">(optional)</span></Label>
                   <div className="flex items-center gap-2">
                     <Bot className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Input
-                      type="password"
-                      placeholder="123456:ABC-DEF..."
-                      value={botToken}
-                      onChange={(e) => setBotToken(e.target.value)}
-                    />
+                    <Input type="password" placeholder="123456:ABC-DEF..." value={botToken} onChange={(e) => setBotToken(e.target.value)} />
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Backend URL</Label>
-                  <div className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Input
-                      placeholder="https://your-bridge.example.com"
-                      value={backendUrl}
-                      onChange={(e) => setBackendUrl(e.target.value)}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Your Node.js bridge server URL for MTProto & streaming
-                  </p>
                 </div>
 
                 <Button
                   onClick={() => saveCredentials.mutate()}
-                  disabled={saveCredentials.isPending || (!apiId && !backendUrl)}
+                  disabled={saveCredentials.isPending || !apiId}
                   className="w-full"
                 >
                   {saveCredentials.isPending ? (
@@ -312,7 +246,6 @@ export default function TelegramSetup() {
             </Card>
           </TabsContent>
 
-          {/* ---- SESSION TAB ---- */}
           <TabsContent value="session">
             <Card className="glass-panel">
               <CardHeader>
@@ -324,7 +257,7 @@ export default function TelegramSetup() {
                     ? "Your Telegram session is active and connected."
                     : !hasCreds
                       ? "⚠️ Save your credentials first in the Credentials tab."
-                      : "Complete the MTProto login via your backend bridge."}
+                      : "Complete the MTProto login to link your Telegram account."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -334,18 +267,10 @@ export default function TelegramSetup() {
                       <Label>Phone Number</Label>
                       <div className="flex items-center gap-2">
                         <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <Input
-                          placeholder="+1234567890"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                        />
+                        <Input placeholder="+1234567890" value={phone} onChange={(e) => setPhone(e.target.value)} />
                       </div>
                     </div>
-                    <Button
-                      onClick={sendOtp}
-                      disabled={loading || !phone || !hasCreds}
-                      className="w-full"
-                    >
+                    <Button onClick={sendOtp} disabled={loading || !phone || !hasCreds} className="w-full">
                       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send OTP"}
                     </Button>
                     {!hasCreds && (
@@ -362,11 +287,7 @@ export default function TelegramSetup() {
                       <Label>OTP Code</Label>
                       <div className="flex items-center gap-2">
                         <KeyRound className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <Input
-                          placeholder="12345"
-                          value={otp}
-                          onChange={(e) => setOtp(e.target.value)}
-                        />
+                        <Input placeholder="12345" value={otp} onChange={(e) => setOtp(e.target.value)} />
                       </div>
                     </div>
                     <Button onClick={verifyOtp} disabled={loading || !otp} className="w-full">
@@ -381,12 +302,7 @@ export default function TelegramSetup() {
                       <Label>2FA Password</Label>
                       <div className="flex items-center gap-2">
                         <ShieldCheck className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <Input
-                          type="password"
-                          placeholder="Your 2FA password"
-                          value={password2fa}
-                          onChange={(e) => setPassword2fa(e.target.value)}
-                        />
+                        <Input type="password" placeholder="Your 2FA password" value={password2fa} onChange={(e) => setPassword2fa(e.target.value)} />
                       </div>
                     </div>
                     <Button onClick={verify2fa} disabled={loading || !password2fa} className="w-full">
@@ -401,11 +317,7 @@ export default function TelegramSetup() {
                       <CheckCircle2 className="w-6 h-6 text-success" />
                     </div>
                     <span className="font-medium text-success">Telegram is connected</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setStep("phone")}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => setStep("phone")}>
                       Re-authenticate
                     </Button>
                   </div>
