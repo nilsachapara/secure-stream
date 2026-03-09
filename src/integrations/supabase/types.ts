@@ -22,6 +22,8 @@ export type Database = {
           is_private: boolean
           name: string
           size: number | null
+          telegram_chat_id: number | null
+          telegram_message_id: number | null
           telegram_msg_id: string
           updated_at: string
         }
@@ -32,6 +34,8 @@ export type Database = {
           is_private?: boolean
           name: string
           size?: number | null
+          telegram_chat_id?: number | null
+          telegram_message_id?: number | null
           telegram_msg_id: string
           updated_at?: string
         }
@@ -42,6 +46,8 @@ export type Database = {
           is_private?: boolean
           name?: string
           size?: number | null
+          telegram_chat_id?: number | null
+          telegram_message_id?: number | null
           telegram_msg_id?: string
           updated_at?: string
         }
