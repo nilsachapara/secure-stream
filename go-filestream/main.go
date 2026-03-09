@@ -336,18 +336,6 @@ func streamViaMTProto(w http.ResponseWriter, r *http.Request, file *FileInfo, ap
 	}
 }
 
-// decodeFileID decodes a Bot API file_id into an MTProto InputFileLocation.
-// Bot API file_ids are base64-encoded structures containing DC ID, file reference, etc.
-func decodeFileID(fileID string) (tg.InputFileLocationClass, error) {
-	// Bot API file_ids encode: type, dc_id, id, access_hash, file_reference
-	// For now, we'll return an error to use the fallback path
-	// A full implementation would decode the base64 file_id
-
-	// This is a simplified approach - for production, use a proper decoder
-	// like https://github.com/AkashiSN/telegram-file-id-decoder
-
-	return nil, fmt.Errorf("file_id decoding not implemented - using Bot API fallback")
-}
 
 func handleDownload(w http.ResponseWriter, r *http.Request) {
 	fileID := strings.TrimPrefix(r.URL.Path, "/api/download/")
