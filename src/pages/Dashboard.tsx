@@ -6,6 +6,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { FileCard } from "@/components/FileCard";
 import { VideoPlayerModal } from "@/components/VideoPlayerModal";
 import { Loader2, FolderOpen } from "lucide-react";
+import { toast } from "sonner";
 
 interface DashboardProps {
   isPrivate?: boolean;
@@ -14,6 +15,7 @@ interface DashboardProps {
 export default function Dashboard({ isPrivate = false }: DashboardProps) {
   const { user, isAdmin } = useAuth();
   const [selectedFile, setSelectedFile] = useState<{ id: string; name: string } | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const { data: files, isLoading } = useQuery({
     queryKey: ["files", isPrivate, user?.id],
@@ -36,16 +38,61 @@ export default function Dashboard({ isPrivate = false }: DashboardProps) {
   };
 
   const canStream = (file: typeof files extends (infer T)[] | null ? T : never) => {
-    // First check access permissions
     if (!canAccess(file)) return false;
-    
-    // All files can be streamed regardless of size - the backend handles routing
     return true;
   };
 
-  const handleDownload = (fileId: string) => {
-    const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy/${fileId}?download=true`;
-    window.open(downloadUrl, "_blank");
+  const handleDownload = async (fileId: string, fileName: string) => {
+    setDownloadingId(fileId);
+    toast.info("Starting download...");
+
+    try {
+      const downloadUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy/${fileId}?download=true`;
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(downloadUrl, {
+        headers: {
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Download failed" }));
+        throw new Error(errorData.error || `Download failed (${response.status})`);
+      }
+
+      const contentLength = response.headers.get("content-length");
+      if (contentLength === "0") {
+        throw new Error("Server returned empty file. The file may be too large for current backend.");
+      }
+
+      const blob = await response.blob();
+      
+      if (blob.size === 0) {
+        throw new Error("Downloaded file is empty (0 bytes). Check backend configuration.");
+      }
+
+      // Extract clean filename
+      const match = fileName.match(/[\w\-. ]+\.\w{2,5}/);
+      const cleanName = match ? match[0].replace(/\*+/g, "").trim() : "download";
+
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = cleanName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+
+      toast.success(`Downloaded ${cleanName}`);
+    } catch (err: any) {
+      console.error("Download error:", err);
+      toast.error(err.message || "Download failed");
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   return (
@@ -73,8 +120,9 @@ export default function Dashboard({ isPrivate = false }: DashboardProps) {
                 name={file.name}
                 size={file.size}
                 canStream={canStream(file)}
+                isDownloading={downloadingId === file.id}
                 onStream={() => setSelectedFile({ id: file.id, name: file.name })}
-                onDownload={() => handleDownload(file.id)}
+                onDownload={() => handleDownload(file.id, file.name)}
               />
             ))}
           </div>

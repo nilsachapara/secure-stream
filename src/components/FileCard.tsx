@@ -1,4 +1,4 @@
-import { Play, Film, Download, FileText, Image, Music } from "lucide-react";
+import { Play, Film, Download, FileText, Image, Music, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -6,6 +6,7 @@ interface FileCardProps {
   name: string;
   size: number | null;
   canStream: boolean;
+  isDownloading?: boolean;
   onStream: () => void;
   onDownload: () => void;
 }
@@ -22,12 +23,9 @@ function formatSize(bytes: number | null) {
   return `${size.toFixed(1)} ${units[i]}`;
 }
 
-/** Extract the real filename from a possibly caption-polluted name */
 function extractFileName(name: string): string {
-  // Try to find a filename pattern like "something.ext" in the string
   const match = name.match(/[\w\-. ]+\.\w{2,5}/);
   if (match) return match[0].replace(/\*+/g, "").trim();
-  // Fallback: take the first line, strip markdown
   return name.split("\n")[0].replace(/\*+/g, "").trim().slice(0, 80);
 }
 
@@ -49,7 +47,7 @@ function isStreamable(name: string) {
   return ["mp4", "mkv", "avi", "mov", "webm", "mp3", "flac", "ogg", "wav"].includes(ext);
 }
 
-export function FileCard({ name, size, canStream, onStream, onDownload }: FileCardProps) {
+export function FileCard({ name, size, canStream, isDownloading, onStream, onDownload }: FileCardProps) {
   const displayName = extractFileName(name);
   const Icon = getFileIcon(name);
   const streamable = isStreamable(name);
@@ -74,8 +72,12 @@ export function FileCard({ name, size, canStream, onStream, onDownload }: FileCa
             </Button>
           )}
           {canStream && (
-            <Button size="sm" variant="outline" onClick={onDownload}>
-              <Download className="w-4 h-4" />
+            <Button size="sm" variant="outline" onClick={onDownload} disabled={isDownloading}>
+              {isDownloading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
             </Button>
           )}
         </div>
