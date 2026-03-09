@@ -288,72 +288,32 @@ func streamViaBotAPI(w http.ResponseWriter, r *http.Request, file *FileInfo, tel
 func streamViaMTProto(w http.ResponseWriter, r *http.Request, file *FileInfo, api *tg.Client) {
 	ctx := r.Context()
 
-	// Resolve the file via MTProto
-	// The telegram_msg_id stored is the file_id from Bot API. We need to convert it
-	// to an InputFileLocation for MTProto download.
-	// We'll use the Bot API to get file info first, then download via MTProto.
-
-	// Get file size from DB or Bot API
 	var totalSize int64
 	if file.Size != nil && *file.Size > 0 {
 		totalSize = *file.Size
 	}
+
+	// Decode file_id to get MTProto InputFileLocation
+	location, err := decodeFileID(file.TelegramMsgID)
+	if err != nil {
+		log.Printf("❌ Cannot decode file_id: %v", err)
+		jsonResp(w, map[string]interface{}{
+			"error": fmt.Sprintf("Cannot decode file_id for MTProto download: %v", err),
+		}, http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ Decoded file_id successfully, starting MTProto download for: %s", file.Name)
 
 	// Use pipe to stream MTProto download to HTTP response
 	pr, pw := io.Pipe()
 
 	go func() {
 		defer pw.Close()
-
-		// Download using MTProto downloader with the file_id
-		// gotd/td's downloader can work with InputFileLocation
-		// We need to use the upload.getFile method with the file location
-
-		// For Bot API file_ids, we can resolve them via messages.getMessages
-		// But since we have the file_id, we use the Bot API to get the file path
-		// and then use the direct Telegram CDN URL with MTProto auth
-
-		// Alternative: Download directly from Telegram servers using MTProto
-		// The file_id from Bot API can be decoded to get the actual file reference
-
-		// Simplest approach: use Bot API getFile to get the path, then fetch via HTTP
-		// but without the 20MB limit by using the MTProto upload.getFile directly
-
-		telegramFileURL, _, err := getTelegramFileURL(file.TelegramMsgID)
-		if err != nil {
-			log.Printf("❌ Cannot resolve file for MTProto: %v", err)
-			pw.CloseWithError(err)
-			return
-		}
-
-		// For large files, Telegram Bot API getFile fails but we can still
-		// try to download using the direct CDN URL pattern
-		_ = telegramFileURL
-
-		// Use the MTProto API directly to download
-		// We need to construct the InputFileLocation from the file_id
-		// This requires decoding the Bot API file_id
-
-		location, err := decodeFileID(file.TelegramMsgID)
-		if err != nil {
-			log.Printf("❌ Cannot decode file_id: %v, falling back to CDN", err)
-			// Fallback: try fetching from CDN URL directly
-			resp, fetchErr := http.Get(telegramFileURL)
-			if fetchErr != nil {
-				pw.CloseWithError(fetchErr)
-				return
-			}
-			defer resp.Body.Close()
-			io.Copy(pw, resp.Body)
-			return
-		}
-
-		// Download via MTProto
-		_, err = dl.Download(api, location).Stream(ctx, pw)
-		if err != nil {
-			log.Printf("❌ MTProto download error: %v", err)
-			pw.CloseWithError(err)
-			return
+		_, dlErr := dl.Download(api, location).Stream(ctx, pw)
+		if dlErr != nil {
+			log.Printf("❌ MTProto download error: %v", dlErr)
+			pw.CloseWithError(dlErr)
 		}
 	}()
 
