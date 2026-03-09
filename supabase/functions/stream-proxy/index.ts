@@ -153,39 +153,15 @@ serve(async (req) => {
           redirect: "follow",
         });
 
-        // Check if backend actually returned data
-        const upstreamCL = upstream.headers.get("content-length");
-        const hasBody = upstreamCL !== "0" && upstreamCL !== null;
+      const upstreamCL = upstream.headers.get("content-length");
 
-        if (!upstream.ok && upstream.status !== 206) {
-          return new Response(
-            JSON.stringify({ error: `Go backend error: ${upstream.status}. Large file streaming requires a working Go backend.` }),
-            { status: upstream.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-
-        // If backend returned empty body, return error instead of 0KB file
-        if (upstreamCL === "0" || (!hasBody && upstream.status === 200)) {
-          // Try to read the body to check if it's actually empty
-          const body = await upstream.arrayBuffer();
-          if (body.byteLength === 0) {
-            return new Response(
-              JSON.stringify({ 
-                error: "Go backend returned empty response. The MTProto file_id decoder may not be working. Please check your Go backend logs.",
-                suggestion: "The Go backend needs a working file_id decoder for files >20MB"
-              }),
-              { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-          }
-          // Body actually had data despite no content-length - stream it
-          const responseHeaders: Record<string, string> = { ...corsHeaders };
-          responseHeaders["content-type"] = contentType;
-          responseHeaders["content-length"] = String(body.byteLength);
-          if (isDownload) {
-            responseHeaders["content-disposition"] = `attachment; filename="${encodeURIComponent(cleanName)}"`;
-          }
-          return new Response(body, { status: 200, headers: responseHeaders });
-        }
+      if (!upstream.ok && upstream.status !== 206) {
+        const errorBody = await upstream.text();
+        return new Response(
+          JSON.stringify({ error: `Go backend error: ${upstream.status}. ${errorBody}` }),
+          { status: upstream.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
         const responseHeaders: Record<string, string> = { ...corsHeaders };
         responseHeaders["content-type"] = contentType;
